@@ -13,6 +13,7 @@ from pywebpush import webpush, WebPushException
 app = FastAPI(title="AIoT Backend Service with Push Notification")
 
 # --- 1. 配置 CORS ---
+# 部署到 Render 後，origins 可以保持 ["*"] 方便開發
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -35,9 +36,9 @@ class UserData(BaseModel):
     note: str
 
 # --- 3. Web Push (VAPID) 配置 ---
-# 請替換為您產生的金鑰。若無金鑰，建議搜尋 "VAPID generator" 線上產生
-VAPID_PUBLIC_KEY = "您的公鑰 (放前端 index.html 使用)"
-VAPID_PRIVATE_KEY = "您的私鑰 (嚴禁外洩)"
+# 重要：請將對應的 publicKey 填入前端 index.html 的 VAPID_PUBLIC_KEY 中
+VAPID_PUBLIC_KEY = "請填入您在網頁取得的 publicKey" 
+VAPID_PRIVATE_KEY = "l-ms405jj1V4Mc0sGJz28kjaiiouZSH1YUj8CNCMUIA"
 VAPID_CLAIMS = {
     "sub": "mailto:your-email@example.com"
 }
@@ -56,18 +57,18 @@ async def subscribe(subscription: dict):
         print(f"新用戶訂閱成功！當前總訂閱數: {len(subscriptions)}")
     return {"status": "success"}
 
-# 原有的功能：請求隨機數字
+# 請求隨機數字
 @app.get("/list")
 async def get_random_number():
     return random.randint(10000000, 99999999)
 
-# 原有的功能：提交數據
+# 接收數據提交
 @app.post("/list")
 async def receive_data(data: UserData):
     print(f"收到數據: {data.note}")
     return random.randint(10000000, 99999999)
 
-# 原有的功能：文件上傳
+# 文件上傳
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     try:
@@ -92,13 +93,14 @@ async def send_notification(subscription, message_text):
         return True
     except WebPushException as ex:
         print(f"推送失敗: {ex}")
-        # 如果用戶已退訂或 Token 失效，可從清單移除
+        # 如果用戶 Token 失效，從清單移除
         if ex.response and ex.response.status_code in [404, 410]:
-            subscriptions.remove(subscription)
+            if subscription in subscriptions:
+                subscriptions.remove(subscription)
         return False
 
 async def monitor_alerts_task():
-    """後台任務：監控 alerts.json 並逐行推送消息"""
+    """背景任務：監控 alerts.json 並逐行推送消息"""
     while True:
         try:
             if os.path.exists(ALERT_FILE):
@@ -110,7 +112,7 @@ async def monitor_alerts_task():
                             print(f"發現 {len(alerts)} 條待推送警報...")
                             for alert in alerts:
                                 # 格式化消息內容
-                                msg = f"【系統警報】\n時間：{alert.get('time')}\n內容：{alert.get('msg')}"
+                                msg = f"【警報】{alert.get('time')} - {alert.get('msg')}"
                                 
                                 # 推送給所有訂閱者
                                 tasks = [send_notification(sub, msg) for sub in subscriptions]
@@ -131,6 +133,7 @@ async def monitor_alerts_task():
 # --- 6. 啟動後台任務 ---
 @app.on_event("startup")
 async def startup_event():
+    # 啟動時自動跑監控任務
     asyncio.create_task(monitor_alerts_task())
 
 if __name__ == "__main__":
