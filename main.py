@@ -2,16 +2,14 @@ import os
 import json
 import random
 import shutil
-import asyncio
-from typing import List
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pathlib import Path
-from pywebpush import webpush, WebPushException
 
-app = FastAPI(title="AIoT Backend Service")
+app = FastAPI(title="AIoT Backend - 列表顯示版")
 
+# 1. 配置 CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,102 +18,57 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 2. 設定路徑
 UPLOAD_DIR = Path("upload_files")
 UPLOAD_DIR.mkdir(exist_ok=True)
 ALERT_FILE = "alerts.json"
-subscriptions: List[dict] = []
-
-# 讀取 VAPID 私鑰（保留原本推送功能）
-try:
-    with open("vapid_private.pem", "r", encoding="utf-8") as f:
-        VAPID_PRIVATE_KEY = f.read().strip()
-    print("已成功載入 vapid_private.pem")
-except FileNotFoundError:
-    print("警告：找不到 vapid_private.pem")
-    VAPID_PRIVATE_KEY = None
-
-VAPID_CLAIMS = {"sub": "mailto:jackal.chiualex@outlook.com"}
 
 class UserData(BaseModel):
     name: str = "User"
     age: int = 0
     note: str
 
+# 3. API 路由
+
 @app.get("/")
 async def root():
-    return {"status": "running", "subscriptions": len(subscriptions)}
+    return {"status": "AIoT Backend 運行中 (列表版)"}
 
-# 新增：提供警報列表給前端
+# 讓 alerts.html 獲取警報列表的關鍵介面
 @app.get("/alerts")
 async def get_alerts():
+    if not os.path.exists(ALERT_FILE):
+        return {"alerts": []}
     try:
-        if os.path.exists(ALERT_FILE):
-            with open(ALERT_FILE, "r", encoding="utf-8") as f:
-                alerts = json.load(f)
+        with open(ALERT_FILE, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+            if not content:
+                return {"alerts": []}
+            alerts = json.loads(content)
+            # 直接回傳列表內容，不清除，以便 alerts.html 隨時查看
             return {"alerts": alerts}
-        return {"alerts": []}
     except Exception as e:
-        print(f"讀取警報失敗: {e}")
-        return {"alerts": []}
-
-@app.post("/subscribe")
-async def subscribe(subscription: dict):
-    if subscription not in subscriptions:
-        subscriptions.append(subscription)
-    return {"status": "success"}
+        return {"alerts": [], "error": str(e)}
 
 @app.get("/list")
 async def get_random_number():
-    return {"number": random.randint(10000000, 99999999)}
+    return random.randint(10000000, 99999999)
 
 @app.post("/list")
 async def receive_data(data: UserData):
-    return {"number": random.randint(10000000, 99999999)}
+    print(f"收到數據: {data.note}")
+    return random.randint(10000000, 99999999)
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-    file_path = UPLOAD_DIR / file.filename
-    with file_path.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    return {"filename": file.filename}
-
-# 保留原本的推送功能（monitor_alerts）
-async def send_push(sub: dict, payload: dict):
-    if not VAPID_PRIVATE_KEY:
-        return
     try:
-        webpush(
-            subscription_info=sub,
-            data=json.dumps(payload),
-            vapid_private_key=VAPID_PRIVATE_KEY,
-            vapid_claims=VAPID_CLAIMS
-        )
-    except Exception:
-        pass  # 暫時靜音錯誤
+        file_path = UPLOAD_DIR / file.filename
+        with file_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        return {"message": "文件上傳成功", "filename": file.filename}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-async def monitor_alerts():
-    while True:
-        if os.path.exists(ALERT_FILE):
-            try:
-                with open(ALERT_FILE, "r", encoding="utf-8") as f:
-                    content = f.read().strip()
-                    if content:
-                        alerts = json.loads(content)
-                        for alert in alerts:
-                            payload = {
-                                "title": "AIoT 系統警報",
-                                "body": f"{alert.get('time', '未知時間')}：{alert.get('msg', '無訊息')}",
-                                "icon": "/Icon_Jackal.jpg"
-                            }
-                            await asyncio.gather(*[send_push(s, payload) for s in subscriptions])
-                            await asyncio.sleep(0.8)
-                        # 清空警報
-                        with open(ALERT_FILE, "w", encoding="utf-8") as f:
-                            json.dump([], f)
-            except:
-                pass
-        await asyncio.sleep(5)
-
-@app.on_event("startup")
-async def startup():
-    asyncio.create_task(monitor_alerts())
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
