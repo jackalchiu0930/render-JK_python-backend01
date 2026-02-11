@@ -1,65 +1,73 @@
 import os
 import random
-import traceback
-import mimetypes
+import shutil
+from typing import Optional
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, UploadFile, HTTPException
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from pathlib import Path
 
-app = FastAPI()
+app = FastAPI(title="AIoT Backend Service")
 
-# 獲取當前文件夾的絕對路徑
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_DIR = os.path.join(BASE_DIR, "upload_files")
-
-origins = ["*"]
+# 1. 配置 CORS (極其重要：否則前端無法存取後端)
+# 部署到 Render 後，這裡的 origins 可以保持 ["*"] 方便開發，或填入你前端的網址
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"], 
     allow_credentials=True,
-    allow_methods=['*'],
-    allow_headers=['*'],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
+# 2. 定義文件存放路徑
+UPLOAD_DIR = Path("upload_files")
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+# 3. 定義文字數據的結構 (對應前端的 UserInfo)
+class UserData(BaseModel):
+    name: str = "User"
+    age: int = 0
+    note: str  # 對應前端輸入框的內容
+
+# --- API 路由設計 ---
+
+# 功能 2.1 & 2.3: 請求隨機 8 位數字 (Button01)
 @app.get("/list")
-async def get_random_id():
-    return random.randint(10000000, 99999999)
+async def get_random_number():
+    # 生成 10,000,000 到 99,999,999 之間的數字
+    random_num = random.randint(10000000, 99999999)
+    return random_num
 
-class UserInfo(BaseModel):
-    name: str
-    age: int
-
+# 功能 2.2: 接收輸入框的數據提交 (提交按鈕)
 @app.post("/list")
-async def post_user_info(user_data: UserInfo): # 這裡改名避免與內建 list 衝突
+async def receive_data(data: UserData):
+    print(f"收到數據: 姓名={data.name}, 年齡={data.age}, 備註={data.note}")
+    # 這裡你可以後續串接數據庫儲存 data.note
+    # 回傳一個隨機 ID 代表提交成功
     return random.randint(10000000, 99999999)
 
+# 功能 2.1: 文件上傳 (Button02)
 @app.post("/upload")
-async def create_upload_file(file: UploadFile):
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
-    
-    contents = await file.read()
-    with open(file_path, "wb") as f:
-        f.write(contents)
-    return {"filename": file.filename, "save_path": file_path}
+async def upload_file(file: UploadFile = File(...)):
+    try:
+        # 安全地保存文件
+        file_path = UPLOAD_DIR / file.filename
+        with file_path.open("wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        return {
+            "message": "文件上傳成功",
+            "filename": file.filename,
+            "path": str(file_path)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"上傳失敗: {str(e)}")
 
-@app.get("/download")
-async def download():
-    # 預設下載 AAA.png
-    file_path = os.path.join(UPLOAD_DIR, "AAA.png")
-    
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="文件 AAA.png 不存在")
-    
-    media_type, _ = mimetypes.guess_type(file_path)
-    if media_type is None:
-        media_type = "application/octet-stream"
-    
-    return FileResponse(
-        path=file_path,
-        filename="AAA.png",
-        media_type=media_type
-    )
+# 測試路由：檢查後端是否正常運作
+@app.get("/")
+async def root():
+    return {"status": "AIoT Backend is running!"}
 
-# 移除原本報錯的 download_aaa，因為上面的 download 已經處理了
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
