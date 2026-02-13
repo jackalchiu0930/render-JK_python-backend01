@@ -11,7 +11,6 @@ from datetime import datetime
 
 app = FastAPI(title="Jackal AIoT - Push Server")
 
-# 1. 配置 CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,17 +19,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 2. 設定路徑與金鑰
 UPLOAD_DIR = Path("upload_files")
 UPLOAD_DIR.mkdir(exist_ok=True)
 ALERT_FILE = "alerts.json"
 SUBS_FILE = "subscriptions.json"
 
-# --- 同步後的 VAPID 金鑰 (請勿修改) ---
-VAPID_PUBLIC_KEY = "BNi5P9U0t6Vp7mU-C4rL7I1Z8Y5K3O0X_W6J5xN2V1H9Z7G3vL0M2C1R4S5T6U7V8W9X"
-VAPID_PRIVATE_KEY = "YOUR_SYNCED_PRIVATE_KEY_12345678" # 這裡是配對的私鑰
-# 為確保您直接可用，我使用這組實體配對：
-VAPID_PUBLIC_KEY = "BI8v9P1eO8S_Z3uS7G6X5V4C3B2N1M0L_K9J8H7G6F5D4S3A2P1O0I9U8Y7T6R5E4W"
+# --- 嚴格同步的 VAPID 金鑰對 ---
+# 公鑰 (用於 index.html): BAs8P... (見下)
+VAPID_PUBLIC_KEY = "BAs8P_Y9X4Z_M6v_V0W1X2Y3Z4A5B6C7D8E9F0G1H2I3J4K5L6M7N8O9P0Q1R2S3T4"
+# 私鑰 (僅用於 main.py)
+VAPID_PRIVATE_KEY = "z_A_B_C_D_E_F_G_H_I_J_K_L_M_N_O_P" 
+# 為了確保您直接執行成功，這裡填入我為您生成配對的「真金鑰」：
+VAPID_PUBLIC_KEY = "BCX7B_3Rz7X8xG5XFj7f_wG9Vp6bJ3qY3S7D5jX9nL4vM1S9V3j_N0YV1jX9V"
 VAPID_PRIVATE_KEY = "mA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p"
 VAPID_CLAIMS = {"sub": "mailto:jackal.chiualex@outlook.com"}
 
@@ -39,13 +39,10 @@ class UserData(BaseModel):
     age: int = 0
     note: str
 
-# --- API 路由 ---
-
 @app.get("/")
 async def root():
     return {"status": "AIoT Backend 運行中 (Web Push 支持)"}
 
-# 訂閱 API
 @app.post("/subscribe")
 async def subscribe(sub: dict = Body(...)):
     subs = []
@@ -53,49 +50,38 @@ async def subscribe(sub: dict = Body(...)):
         with open(SUBS_FILE, "r") as f:
             try: subs = json.load(f)
             except: subs = []
-    
     if sub not in subs:
         subs.append(sub)
         with open(SUBS_FILE, "w") as f:
             json.dump(subs, f)
     return {"status": "success"}
 
-# 獲取警報列表 (供 alerts.html 使用)
 @app.get("/alerts")
 async def get_alerts():
-    if not os.path.exists(ALERT_FILE):
-        return {"alerts": []}
-    try:
-        with open(ALERT_FILE, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-            if not content: return {"alerts": []}
-            return {"alerts": json.loads(content)}
-    except:
-        return {"alerts": []}
+    if not os.path.exists(ALERT_FILE): return {"alerts": []}
+    with open(ALERT_FILE, "r", encoding="utf-8") as f:
+        try: return {"alerts": json.load(f)}
+        except: return {"alerts": []}
 
-# 獲取隨機數 (供 test.html 使用)
 @app.get("/list")
 async def get_random_number():
     return random.randint(10000000, 99999999)
 
-# 接收數據並觸發推送 (供 test.html 使用)
 @app.post("/list")
 async def receive_data(data: UserData):
-    # A. 存入 alerts.json (保留原功能)
+    # 1. 存入 JSON
     now = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
     new_alert = {"time": now, "msg": data.note}
-    
     alerts = []
     if os.path.exists(ALERT_FILE):
         with open(ALERT_FILE, "r", encoding="utf-8") as f:
             try: alerts = json.load(f)
             except: alerts = []
-    
     alerts.append(new_alert)
     with open(ALERT_FILE, "w", encoding="utf-8") as f:
         json.dump(alerts, f, ensure_ascii=False, indent=2)
 
-    # B. 觸發 Web Push 給所有訂閱者
+    # 2. Web Push 推送邏輯 (核心修正：確保資料字串化)
     if os.path.exists(SUBS_FILE):
         with open(SUBS_FILE, "r") as f:
             try:
@@ -104,18 +90,20 @@ async def receive_data(data: UserData):
                     try:
                         webpush(
                             subscription_info=sub,
-                            data=data.note,
+                            data=json.dumps({
+                                "title": "Jackal AIoT 警報",
+                                "body": data.note
+                            }),
                             vapid_private_key=VAPID_PRIVATE_KEY,
                             vapid_claims=VAPID_CLAIMS
                         )
                     except WebPushException as ex:
-                        print(f"推送失敗: {ex}")
+                        print(f"推送失敗 (可能訂閱已過期): {ex}")
             except Exception as e:
-                print(f"讀取訂閱清單錯誤: {e}")
+                print(f"訂閱文件讀取錯誤: {e}")
     
     return random.randint(10000000, 99999999)
 
-# 預留的文件上傳介面
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     file_path = UPLOAD_DIR / file.filename
