@@ -36,7 +36,6 @@ async def root():
 
 @app.post("/subscribe")
 async def subscribe(sub: dict = Body(...)):
-    # 這是檢查重點！Logs 必須出現這行
     print(f"--- 收到訂閱請求: {sub.get('endpoint')[:30]}... ---")
     subs = []
     if os.path.exists(SUBS_FILE):
@@ -82,4 +81,6 @@ async def receive_data(data: UserData):
                     print("--- 推送成功發送 ---")
                 except Exception as e:
                     print(f"--- 推送單一失敗: {e} ---")
-    return random.randint(1000, 9999)
+    
+    # 修改：回傳 8 位隨機數字
+    return random.randint(10000000, 99999999)
