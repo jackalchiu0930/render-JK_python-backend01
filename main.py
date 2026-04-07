@@ -9,13 +9,9 @@ from pydantic import BaseModel
 from datetime import datetime
 import uvicorn
 
-# ===================== 配置區 =====================
-PORT = int(os.getenv("PORT", 8000))
-ALERT_FILE = "alerts.json"
+app = FastAPI(title="Jackal AIoT Final")
 
-app = FastAPI(title="Jackal AIoT Platform")
-
-# 跨域配置 (保持與成功版本一致)
+# 1. 跨域配置 (必須最先載入)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,17 +20,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 定義接收格式
+ALERT_FILE = "alerts.json"
+
 class UserData(BaseModel):
     note: str
 
-# ===================== API 路由區 =====================
-
-# 1. 核心測試介面 (處理隨機數與存檔)
+# 2. API 路由 (必須放在 StaticFiles 之前)
 @app.post("/list")
 async def receive_data(data: UserData):
     try:
-        # 存檔邏輯
         now = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
         new_alert = {"time": now, "msg": data.note}
         
@@ -50,12 +44,11 @@ async def receive_data(data: UserData):
         with open(ALERT_FILE, "w", encoding="utf-8") as f:
             json.dump(alerts, f, ensure_ascii=False, indent=2)
 
-        # 回傳隨機數 (讓前端顯示)
+        # 返回隨機數給前端
         return random.randint(1000, 9999)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# 2. 檔案上傳介面
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     try:
@@ -66,16 +59,11 @@ async def upload_file(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# 3. 根目錄檢查 (Render 健康檢查用)
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
-
-# ===================== 靜態檔案服務 =====================
-
-# 重要：這段必須放在所有 @app.post 之後
-# 這樣當請求 /list 時，會先被上面的 API 攔截，而不是被當作找靜態檔案
+# 3. 靜態檔案掛載 (放在最後)
+# 確保路徑正確，如果檔案在根目錄，使用 "."
 app.mount("/", StaticFiles(directory=".", html=True), name="static")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    # Render 會自動給 PORT，如果沒有則用 8000
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
