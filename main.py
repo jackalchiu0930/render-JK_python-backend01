@@ -8,7 +8,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from pathlib import Path
-from pywebpush import webpush, WebPushException
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 import uvicorn
@@ -16,9 +15,6 @@ import uvicorn
 # ===================== 環境配置 =====================
 PORT = int(os.getenv("PORT", 8000))
 DEFAULT_IMAGE_PATH = os.getenv("DEFAULT_IMAGE_PATH", "Icon_Jackal.png")
-
-VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "BI8v9P1eO8S_Z3uS7G6X5V4C3B2N1M0L_K9J8H7G6F5D4S3A2P1O0I9U8Y7T6R5E4W")
-VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "mA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p")
 
 app = FastAPI(title="Jackal AIoT Final", version="1.0.8")
 
@@ -35,15 +31,12 @@ BASE_DIR = Path(__file__).parent.resolve()
 FRONTEND_DIR = BASE_DIR.parent / "pwa_front01-main"
 
 ALERT_FILE = BASE_DIR / "alerts.json"
-SUBS_FILE = BASE_DIR / "subscriptions.json"
 CONFIG_FILE = BASE_DIR / "config.json"
 UPLOAD_DIR = BASE_DIR / "Upload"
 IMAGE_PATH = BASE_DIR / DEFAULT_IMAGE_PATH
 
 UPLOAD_DIR.mkdir(exist_ok=True)
 CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-
-VAPID_CLAIMS = {"sub": "mailto:jackal.chiualex@outlook.com"}
 
 print(f"--- 後端目錄: {BASE_DIR} ---")
 print(f"--- 前端目錄: {FRONTEND_DIR} ---")
@@ -74,20 +67,6 @@ async def root():
         return FileResponse(index_file)
     return {"status": "ok", "version": "1.0.8"}
 
-@app.post("/subscribe")
-async def subscribe(sub: dict = Body(...)):
-    print(f"--- 收到訂閱請求 ---")
-    subs = []
-    if SUBS_FILE.exists():
-        with open(SUBS_FILE, "r") as f:
-            try: subs = json.load(f)
-            except: subs = []
-    if sub not in subs:
-        subs.append(sub)
-        with open(SUBS_FILE, "w") as f:
-            json.dump(subs, f)
-    return {"status": "success"}
-
 @app.get("/alerts")
 async def get_alerts():
     if not ALERT_FILE.exists():
@@ -113,16 +92,7 @@ async def receive_data(data: UserData):
     with open(ALERT_FILE, "w", encoding="utf-8") as f:
         json.dump(alerts, f, ensure_ascii=False, indent=2)
 
-    if SUBS_FILE.exists():
-        with open(SUBS_FILE, "r") as f:
-            subs = json.load(f)
-            for sub in subs:
-                try:
-                    webpush(sub, json.dumps({"title": "AIoT警報", "body": data.note}), 
-                           VAPID_PRIVATE_KEY, VAPID_CLAIMS)
-                except Exception as e:
-                    print(f"推送失敗: {e}")
-
+    # 已移除 Web Push 推送邏輯
     return random.randint(10000000, 99999999)
 
 @app.get("/get-image")
@@ -282,7 +252,6 @@ async def get_my_checkin_records(employee_id: str = Query(...)):
     }
 
 # ===================== 靜態檔案服務（必須放在最後） =====================
-# 讓前端所有 HTML、圖片、sw.js 等都能被正確訪問
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
 
 # ===================== 啟動 =====================

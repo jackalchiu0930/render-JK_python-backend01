@@ -2,9 +2,7 @@ fastapi
 uvicorn
 python-multipart
 pydantic
-pywebpush  # 新增：web推送
-Pillow     # 新增：圖片處理(PIL)依赖
+Pillow
 opencv-python
 pyzbar
-Pillow
 numpy
