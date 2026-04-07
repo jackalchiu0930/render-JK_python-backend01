@@ -1,6 +1,6 @@
 import os
 import random
-from fastapi import FastAPI, Body
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -17,24 +17,21 @@ app.add_middleware(
 class UserData(BaseModel):
     note: str
 
-# --- 診斷用 API ---
+# --- API 路由區 ---
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "msg": "API 路由正常工作"}
+    return {"status": "ok", "source": "FastAPI backend"}
 
 @app.post("/api/test_post")
 async def test_post(data: UserData):
-    return {"status": "success", "received": data.note, "random": random.randint(1000, 9999)}
+    return {"status": "success", "random": random.randint(1000, 9999)}
 
-# --- 靜態檔案掛載 (關鍵修正) ---
-# 因為你的 HTML 在 Frontend/ 資料夾，所以這裡要指向 "Frontend"
-if os.path.exists("Frontend"):
-    app.mount("/", StaticFiles(directory="Frontend", html=True), name="static")
-else:
-    # 如果沒找到資料夾，就掛載根目錄
-    app.mount("/", StaticFiles(directory=".", html=True), name="static")
+# --- 靜態檔案掛載 ---
+# 既然你的 HTML 在 Frontend 資料夾內
+# 我們把根路徑直接映射到該資料夾
+app.mount("/", StaticFiles(directory="Frontend", html=True), name="static")
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
     import uvicorn
+    port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
